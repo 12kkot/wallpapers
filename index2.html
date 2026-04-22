@@ -12,16 +12,22 @@ canvas { display:block; }
 <canvas id="c"></canvas>
 
 <script>
-const gl = document.getElementById("c").getContext("webgl");
-const canvas = gl.canvas;
+const canvas=document.getElementById("c");
+const gl=canvas.getContext("webgl",{powerPreference:"high-performance"});
+const dpr=Math.min(window.devicePixelRatio||1,2);
+let w,h,timer;
 
 function resize(){
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
+  w=window.innerWidth;
+  h=window.innerHeight;
+  canvas.width=w*dpr;
+  canvas.height=h*dpr;
+  canvas.style.width=w+"px";
+  canvas.style.height=h+"px";
   gl.viewport(0,0,canvas.width,canvas.height);
 }
 resize();
-addEventListener("resize", resize);
+addEventListener("resize",()=>{clearTimeout(timer);timer=setTimeout(resize,100)});
 
 // ===== VERTEX =====
 const vs = `
@@ -32,13 +38,13 @@ void main(){
 
 // ===== FRAGMENT =====
 const fs = `
-precision highp float;
+precision mediump float;
 
 uniform vec2 iResolution;
 uniform float iTime;
 uniform vec2 iMouse;
 
-#define MAX_STEPS 50
+#define MAX_STEPS 40
 #define MAX_DIST 80.0
 #define MIN_HIT 0.1
 
@@ -222,6 +228,8 @@ gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 let tLoc=gl.getUniformLocation(prog,"iTime");
 let rLoc=gl.getUniformLocation(prog,"iResolution");
 let mLoc=gl.getUniformLocation(prog,"iMouse");
+let running=true;
+document.addEventListener("visibilitychange",()=>{running=!document.hidden});
 
 // mouse (needed for zoom logic even if subtle)
 let mouse=[0,0];
@@ -230,10 +238,12 @@ canvas.onmousemove=e=>{
 };
 
 function draw(t){
-  gl.uniform1f(tLoc,t*0.001);
-  gl.uniform2f(rLoc,canvas.width,canvas.height);
-  gl.uniform2f(mLoc,mouse[0],mouse[1]);
-  gl.drawArrays(gl.TRIANGLES,0,6);
+  if(running){
+    gl.uniform1f(tLoc,t*0.001);
+    gl.uniform2f(rLoc,canvas.width,canvas.height);
+    gl.uniform2f(mLoc,mouse[0],mouse[1]);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);

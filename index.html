@@ -12,16 +12,22 @@ canvas { display:block; }
 <canvas id="c"></canvas>
 
 <script>
-const gl = document.getElementById("c").getContext("webgl");
-const canvas = gl.canvas;
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl",{powerPreference:"high-performance"});
+const dpr=Math.min(window.devicePixelRatio||1,2);
+let w,h,timer;
 
 function resize(){
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
+  w=window.innerWidth;
+  h=window.innerHeight;
+  canvas.width=w*dpr;
+  canvas.height=h*dpr;
+  canvas.style.width=w+"px";
+  canvas.style.height=h+"px";
   gl.viewport(0,0,canvas.width,canvas.height);
 }
 resize();
-addEventListener("resize", resize);
+addEventListener("resize",()=>{clearTimeout(timer);timer=setTimeout(resize,100)});
 
 // ===== VERTEX =====
 const vs = `
@@ -32,12 +38,12 @@ void main(){
 
 // ===== FRAGMENT =====
 const fs = `
-precision highp float;
+precision mediump float;
 
 uniform float iTime;
 uniform vec2 iResolution;
 
-#define MAX_STEPS 100
+#define MAX_STEPS 60
 #define MAX_DIST 1000.0
 #define MIN_DIST 0.3
 #define pi acos(-1.0)
@@ -157,14 +163,17 @@ let loc = gl.getAttribLocation(prog,"p");
 gl.enableVertexAttribArray(loc);
 gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 
-let tLoc = gl.getUniformLocation(prog,"iTime");
-let rLoc = gl.getUniformLocation(prog,"iResolution");
+let tLoc=gl.getUniformLocation(prog,"iTime");
+let rLoc=gl.getUniformLocation(prog,"iResolution");
+let running=true;
+document.addEventListener("visibilitychange",()=>{running=!document.hidden});
 
-// render
 function draw(t){
-  gl.uniform1f(tLoc, t*0.001);
-  gl.uniform2f(rLoc, canvas.width, canvas.height);
-  gl.drawArrays(gl.TRIANGLES,0,6);
+  if(running){
+    gl.uniform1f(tLoc,t*0.001);
+    gl.uniform2f(rLoc,canvas.width,canvas.height);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);

@@ -12,16 +12,22 @@ canvas { display:block; }
 <canvas id="c"></canvas>
 
 <script>
-const gl = document.getElementById("c").getContext("webgl");
-const canvas = gl.canvas;
+const canvas=document.getElementById("c");
+const gl=canvas.getContext("webgl",{powerPreference:"high-performance"});
+const dpr=Math.min(window.devicePixelRatio||1,2);
+let w,h,timer;
 
 function resize(){
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
+  w=window.innerWidth;
+  h=window.innerHeight;
+  canvas.width=w*dpr;
+  canvas.height=h*dpr;
+  canvas.style.width=w+"px";
+  canvas.style.height=h+"px";
   gl.viewport(0,0,canvas.width,canvas.height);
 }
 resize();
-addEventListener("resize", resize);
+addEventListener("resize",()=>{clearTimeout(timer);timer=setTimeout(resize,100)});
 
 // ===== VERTEX =====
 const vs = `
@@ -32,7 +38,7 @@ void main(){
 
 // ===== FRAGMENT =====
 const fs = `
-precision highp float;
+precision mediump float;
 
 uniform float time;
 uniform vec2 resolution;
@@ -130,7 +136,7 @@ vec3 Grass(vec3 ro,vec3 rd,vec3 mat,float dist){
   float rCoC=CircleOfConfusion(dist*.3);
   vec4 col=vec4(mat*0.15,0.0);
 
-  for(int i=0;i<15;i++){
+  for(int i=0;i<12;i++){
     if(col.w>.99)break;
     vec3 p=ro+rd*d;
     vec3 r=DE(p);
@@ -235,6 +241,8 @@ gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
 let tLoc=gl.getUniformLocation(prog,"time");
 let rLoc=gl.getUniformLocation(prog,"resolution");
 let mLoc=gl.getUniformLocation(prog,"mouse");
+let running=true;
+document.addEventListener("visibilitychange",()=>{running=!document.hidden});
 
 let mouse=[0,0];
 canvas.onmousemove=e=>{
@@ -242,10 +250,12 @@ canvas.onmousemove=e=>{
 };
 
 function draw(t){
-  gl.uniform1f(tLoc,t*0.001);
-  gl.uniform2f(rLoc,canvas.width,canvas.height);
-  gl.uniform2f(mLoc,mouse[0],mouse[1]);
-  gl.drawArrays(gl.TRIANGLES,0,6);
+  if(running){
+    gl.uniform1f(tLoc,t*0.001);
+    gl.uniform2f(rLoc,canvas.width,canvas.height);
+    gl.uniform2f(mLoc,mouse[0],mouse[1]);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+  }
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
