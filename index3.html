@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Grass Terrain Shader</title>
+<style>
+body { margin:0; overflow:hidden; background:black; }
+canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+const gl = document.getElementById("c").getContext("webgl");
+const canvas = gl.canvas;
+
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+resize();
+addEventListener("resize", resize);
+
+// ===== VERTEX =====
+const vs = `
+attribute vec2 p;
+void main(){
+  gl_Position = vec4(p,0.0,1.0);
+}`;
+
+// ===== FRAGMENT =====
+const fs = `
+precision highp float;
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec2 mouse;
+
+#define PI 3.14159265359
+
+vec3 sunLight = normalize(vec3(0.35,0.2,0.3));
+vec3 sunColour = vec3(1.0,.75,.6);
+
+// -------- noise --------
+float Hash(float n){return fract(sin(n)*43758.5453);}
+float Hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+
+float Noise(vec2 x){
+  vec2 p=floor(x);
+  vec2 f=fract(x);
+  f=f*f*(3.0-2.0*f);
+  float n=p.x+p.y*57.0;
+  return mix(mix(Hash(n+0.0),Hash(n+1.0),f.x),
+             mix(Hash(n+57.0),Hash(n+58.0),f.x),f.y);
+}
+
+vec2 Voronoi(vec2 x){
+  vec2 p=floor(x);
+  vec2 f=fract(x);
+  float res=100.0,id=0.0;
+  for(int j=-1;j<=1;j++)
+  for(int i=-1;i<=1;i++){
+    vec2 b=vec2(float(i),float(j));
+    vec2 r=b-f+Hash(p+b);
+    float d=dot(r,r);
+    if(d<res){res=d;id=Hash(p+b);}
+  }
+  return vec2(max(.4-sqrt(res),0.0),id);
+}
+
+// -------- terrain --------
+vec2 Terrain(vec2 p){
+  float w=50.0;
+  float f=0.0;
+  vec2 pos=p*0.003;
+  for(int i=0;i<3;i++){
+    f+=Noise(pos)*w;
+    w*=0.62;
+    pos*=2.5;
+  }
+  return vec2(f,0.0);
+}
+
+vec2 Map(vec3 p){
+  vec2 h=Terrain(p.xz);
+  return vec2(p.y-h.x,h.y);
+}
+
+// -------- sky --------
+vec3 GetSky(vec3 rd){
+  float sunAmount=max(dot(rd,sunLight),0.0);
+  float v=pow(1.0-max(rd.y,0.0),6.0);
+  vec3 sky=mix(vec3(.1,.2,.3),vec3(.32),v);
+  sky+=sunColour*sunAmount*sunAmount*.25;
+  sky+=sunColour*min(pow(sunAmount,800.0)*1.5,.3);
+  return clamp(sky,0.0,1.0);
+}
+
+vec3 ApplyFog(vec3 rgb,float d,vec3 dir){
+  float fog=clamp(d*d*0.0000012,0.0,1.0);
+  return mix(rgb,GetSky(dir),fog);
+}
+
+// -------- distance --------
+vec3 DE(vec3 p){
+  float base=Terrain(p.xz).x-1.9;
+  float height=Noise(p.xz*2.0)*.75+Noise(p.xz)*.35+Noise(p.xz*.5)*.2;
+  float y=p.y-base-height;
+  y=y*y;
+
+  vec2 v=Voronoi(p.xz*2.5+sin(y*4.0+p.zx*12.3)*.12);
+  float f=v.x*.6+y*.58;
+
+  return vec3(y-f*1.4, clamp(f*1.5,0.0,1.0), v.y);
+}
+
+// -------- raymarch grass --------
+float Linstep(float a,float b,float t){
+  return clamp((t-a)/(b-a),0.0,1.0);
+}
+
+float CircleOfConfusion(float t){
+  return max(t*.04,(2.0/resolution.y)*(1.0+t));
+}
+
+vec3 Grass(vec3 ro,vec3 rd,vec3 mat,float dist){
+  float d=0.0;
+  float rCoC=CircleOfConfusion(dist*.3);
+  vec4 col=vec4(mat*0.15,0.0);
+
+  for(int i=0;i<15;i++){
+    if(col.w>.99)break;
+    vec3 p=ro+rd*d;
+    vec3 r=DE(p);
+    r.x+=.5*rCoC;
+
+    if(r.x<rCoC){
+      float alpha=(1.0-col.w)*Linstep(-rCoC,rCoC,-r.x);
+      vec3 gra=mix(mat,vec3(.35,.35,.2),pow(r.y,9.0)*.7)*r.y;
+      col+=vec4(gra*alpha,alpha);
+    }
+    d+=max(r.x*.7,.1);
+  }
+  return col.xyz;
+}
+
+// -------- scene --------
+float Scene(vec3 ro,vec3 rd){
+  float t=5.0;
+  for(int i=0;i<80;i++){
+    vec3 p=ro+rd*t;
+    float h=Map(p).x;
+    if(h<0.05) return t;
+    t+=max(0.04,0.35*h)+t*0.04;
+  }
+  return -1.0;
+}
+
+// -------- camera --------
+vec3 CameraPath(float t){
+  vec2 p=vec2(200.0*sin(3.54*t),200.0*cos(2.0*t));
+  return vec3(p.x+55.0,12.0+sin(t*.3)*6.5,-94.0+p.y);
+}
+
+// -------- post --------
+vec3 Post(vec3 c,vec2 uv){
+  c=pow(c,vec3(0.45));
+  c=mix(vec3(.5),c,1.3);
+  c*=.4+0.5*pow(40.0*uv.x*uv.y*(1.0-uv.x)*(1.0-uv.y),0.2);
+  return c;
+}
+
+// -------- MAIN --------
+void main(){
+  vec2 uv=(-1.0+2.0*(gl_FragCoord.xy/resolution.xy))*vec2(resolution.x/resolution.y,1.0);
+
+  float t=(time*5.0+2352.0)*.006;
+
+  vec3 ro=CameraPath(t);
+  vec3 target=CameraPath(t+0.01);
+  ro.y+=Terrain(target.xz).x;
+  target.y=ro.y;
+
+  vec3 f=normalize(target-ro);
+  vec3 r=normalize(vec3(-f.z,0.0,f.x));
+  vec3 u=cross(r,f);
+
+  vec3 rd=normalize(uv.x*r+uv.y*u+1.3*f);
+
+  float d=Scene(ro,rd);
+
+  vec3 col;
+  if(d<0.0){
+    col=GetSky(rd);
+  }else{
+    vec3 p=ro+rd*d;
+    vec3 base=vec3(.1,.3,.1);
+    col=Grass(p,rd,base,d);
+    col=ApplyFog(col,d,rd);
+  }
+
+  col=Post(col,gl_FragCoord.xy/resolution.xy);
+
+  gl_FragColor=vec4(col,1.0);
+}
+`;
+
+// compile
+function compile(t,s){
+  let sh=gl.createShader(t);
+  gl.shaderSource(sh,s);
+  gl.compileShader(sh);
+  return sh;
+}
+
+let prog=gl.createProgram();
+gl.attachShader(prog,compile(gl.VERTEX_SHADER,vs));
+gl.attachShader(prog,compile(gl.FRAGMENT_SHADER,fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+// quad
+let buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([
+-1,-1,1,-1,-1,1,-1,1,1,-1,1,1
+]),gl.STATIC_DRAW);
+
+let loc=gl.getAttribLocation(prog,"p");
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+
+let tLoc=gl.getUniformLocation(prog,"time");
+let rLoc=gl.getUniformLocation(prog,"resolution");
+let mLoc=gl.getUniformLocation(prog,"mouse");
+
+let mouse=[0,0];
+canvas.onmousemove=e=>{
+  mouse=[e.clientX, canvas.height-e.clientY];
+};
+
+function draw(t){
+  gl.uniform1f(tLoc,t*0.001);
+  gl.uniform2f(rLoc,canvas.width,canvas.height);
+  gl.uniform2f(mLoc,mouse[0],mouse[1]);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
