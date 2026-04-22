@@ -39,52 +39,51 @@ precision mediump float;
 uniform vec2 resolution;
 uniform float time;
 
-float rand(vec2 co) {
-  return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+float rand(vec2 co){
+    return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453)*100.0;
 }
-
 vec2 getblock(float res, vec2 loc) {
-  return floor(loc / res) * res;
+    vec2 block = floor((loc) / res)*res;
+    return block;
 }
-
 vec2 getVector(float res, vec2 loc) {
-  float b = rand(getblock(res, loc)) * 100.0;
-  return vec2(sin(b), cos(b));
+    float block = rand(getblock(res, loc))*100.0;
+    return vec2(sin(block),cos(block));
 }
-
 float interpolate(float t) {
-  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    return 6.0*pow(t,5.0)-15.0*pow(t,4.0)+10.0*pow(t,3.0);
 }
-
 float perlin(float res, vec2 loc) {
-  vec2 block = getblock(res, loc + res);
-  vec2 localCoord = (block - loc) / res;
-  vec2 vecTL = getVector(res, loc);
-  vec2 vecTR = getVector(res, loc + vec2(res, 0.0));
-  vec2 vecBL = getVector(res, loc + vec2(0.0, -res));
-  vec2 vecBR = getVector(res, loc + vec2(res, -res));
-  vec2 interp = vec2(interpolate(localCoord.x), interpolate(1.0 - localCoord.y));
-  localCoord = localCoord * 2.0 - 1.0;
-  vec2 o = vec2(1.0, -1.0);
-  float dottl = (dot(vecTL, localCoord - o) + 1.4) / 2.3;
-  float dottr = (dot(vecTR, localCoord - vec2(-1.0, -1.0)) + 1.4) / 2.3;
-  float dotbl = (dot(vecBL, localCoord - vec2(1.0, 1.0)) + 1.4) / 2.3;
-  float dotbr = (dot(vecBR, localCoord - vec2(-1.0, 1.0)) + 1.4) / 2.3;
-  float ht = interp.x * dottl + (1.0 - interp.x) * dottr;
-  float hb = interp.x * dotbl + (1.0 - interp.x) * dotbr;
-  return (interp.y * hb + (1.0 - interp.y) * ht) / 1.1;
+    vec2 localCoord = (getblock(res, loc+res)-loc)/res;
+    vec2 vecTL = getVector(res, loc);
+    vec2 vecTR = getVector(res, loc+vec2(res,0.0));
+    vec2 vecBL = getVector(res, loc+vec2(0.0,-res));
+    vec2 vecBR = getVector(res, loc+vec2(res,-res));
+    vec2 interp = vec2(interpolate(localCoord.x),interpolate(localCoord.y));
+    localCoord = localCoord*2.0-1.0;
+    vec2 offsettl = vec2(1.0,-1.0);
+    vec2 offsettr = vec2(-1.0,-1.0);
+    vec2 offsetbl = vec2(1.0,1.0);
+    vec2 offsetbr = vec2(-1.0,1.0);
+    float dottl = (dot(vecTL, localCoord-offsettl)+1.4)/2.3;
+    float dottr = (dot(vecTR, localCoord-offsettr)+1.4)/2.3;
+    float dotbl = (dot(vecBL, localCoord-offsetbl)+1.4)/2.3;
+    float dotbr = (dot(vecBR, localCoord-offsetbr)+1.4)/2.3;
+    float horizTop = interp.x*dottl+(1.0-interp.x)*dottr;
+    float horizBottom = interp.x*dotbl+(1.0-interp.x)*dotbr;
+    float vertical = interp.y*horizBottom+(1.0-interp.y)*horizTop;
+    return vertical/1.1;
 }
-
-void main() {
-  float res = 80.0;
-  float moveSpeed = 0.15;
-  float s1 = perlin(moveSpeed, vec2(time * 0.3)) * 500.0;
-  float s2 = perlin(moveSpeed, vec2(time * 0.3 + 500.0)) * 500.0;
-  vec2 off = gl_FragCoord.xy + vec2(s1, s2);
-  float p1 = perlin(res, off);
-  float p3 = perlin(res, off * 2.0) * 0.5 + perlin(res, off * 4.0) * 0.25;
-  float v = (p1 + p3) * 0.7;
-  gl_FragColor = vec4(vec3(mod(v * 8.0, 1.0) * 0.12), 1.0);
+void main(void) {
+    float resolutionVal = 100.0;
+    float moveAmount = 1000.0;
+    float moveSpeed = 35.0;
+    float sex1 = perlin(moveSpeed, vec2(time))*moveAmount;
+    float sex2 = perlin(moveSpeed, vec2(time+500.0))*moveAmount;
+    float perlin1 = perlin(resolutionVal, 1.0*(gl_FragCoord.xy+vec2(sex1, sex2)));
+    float perlin3 = perlin(resolutionVal, 4.0*(gl_FragCoord.xy+vec2(sex1, sex2)))/16.0;
+    float value = (perlin1 + perlin3);
+    gl_FragColor = vec4(vec3(mod(value*10.0, 1.0)/12.0), 1.0);
 }`;
 
 function createShader(type, src) {
