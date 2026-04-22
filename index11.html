@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Menger Sponge</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: black; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl", { powerPreference: "high-performance" });
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+let w, h, timer;
+
+function resize() {
+  w = window.innerWidth;
+  h = window.innerHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+resize();
+addEventListener("resize", () => { clearTimeout(timer); timer = setTimeout(resize, 100) });
+
+const vs = `
+attribute vec2 p;
+void main() {
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+
+const fs = `
+precision mediump float;
+uniform float time;
+uniform vec2 mouse;
+uniform vec2 resolution;
+
+float speed;
+vec3 spherePos1;
+vec3 lightCol1 = vec3(0.8, 0.5, 0.2);
+
+vec3 cam(float t) {
+  return vec3(sin(t * 0.3) * 1.0, cos(t * 0.5 + 1.5), t);
+}
+
+float sdCross(vec3 p, float c) {
+  p = abs(p);
+  vec3 d = max(p.xyz, p.yzx);
+  return min(min(d.x, d.y), d.z) - c;
+}
+
+float sdMenger(vec3 p, float size, float width) {
+  float s = 1.0;
+  float d = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec3 q = mod(p * s, 2.0) - 1.0;
+    s *= size;
+    q = 1.0 - size * abs(q);
+    float c = sdCross(q, width) / s;
+    d = max(d, c);
+  }
+  return d;
+}
+
+float map(vec3 p) {
+  float d1 = sdMenger(p, 3.8, 0.7);
+  float d2 = length(p.xy - cam(p.z).xy) - 0.2;
+  return max(d1, -d2);
+}
+
+vec4 spheres(vec3 p) {
+  spherePos1 = cam(time * speed + 1.0) + vec3(cos(time * 1.3) * 0.6, sin(time) * 0.6, exp(sin(time)) * 0.5);
+  float d3 = length(p - spherePos1) - 0.0;
+  vec3 col = 3.0 * (exp(-d3 * 3.0) * lightCol1);
+  return vec4(col, d3);
+}
+
+vec3 genNormal(vec3 p) {
+  vec2 d = vec2(0.001, 0.0);
+  return normalize(vec3(
+    map(p + d.xyy) - map(p - d.xyy),
+    map(p + d.yxy) - map(p - d.yxy),
+    map(p + d.yyx) - map(p - d.yyx)
+  ));
+}
+
+void main() {
+  vec2 p = (gl_FragCoord.xy * 2.0 - resolution.xy) / min(resolution.x, resolution.y);
+  vec3 color = vec3(0.0);
+  speed = 1.0;
+  float move = time * speed;
+  vec3 cPos = cam(move);
+  vec3 t = cam(move + 0.5);
+  vec3 fwd = normalize(t - cPos);
+  vec3 side = normalize(cross(vec3(sin(time * 0.6) * 0.5, 1.0, cos(time * 0.3 + 1.6) * 0.4), fwd));
+  vec3 up = normalize(cross(fwd, side));
+  vec3 rd = normalize(p.x * side + p.y * up + fwd * (1.0 + 0.3 * (1.0 - dot(p, p))));
+  float d, dd;
+  vec3 ac;
+  int k;
+  for (int i = 0; i < 80; i++) {
+    vec4 s = spheres(cPos + d * rd);
+    dd = map(cPos + d * rd);
+    if (dd < 0.001) break;
+    ac += s.xyz;
+    dd = min(dd, s.w);
+    k = i;
+    d += dd;
+  }
+  vec3 ip = cPos + d * rd;
+  if (dd < 0.001) {
+    vec3 normal = genNormal(ip);
+    float ao = 1.0 - (float(k) + dd / 0.001) / 100.0;
+    float diff1 = clamp(dot(normalize(spherePos1 - ip), normal), 0.0, 1.0) / pow(length(spherePos1 - ip), 3.0);
+    color += diff1 * lightCol1;
+    color *= ao;
+  }
+  color += ac * 0.03;
+  p = gl_FragCoord.xy / resolution.xy;
+  color = sqrt(color);
+  color *= pow(p.x * p.y * (1.0 - p.x) * (1.0 - p.y) * 16.0, 0.5);
+  gl_FragColor = vec4(color, 1.0);
+}`;
+
+function createShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, "p");
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const rLoc = gl.getUniformLocation(prog, "resolution");
+const tLoc = gl.getUniformLocation(prog, "time");
+const mLoc = gl.getUniformLocation(prog, "mouse");
+let running = true;
+document.addEventListener("visibilitychange", () => { running = !document.hidden });
+
+let mouse = [0, 0];
+canvas.onmousemove = e => { mouse = [e.clientX, canvas.height - e.clientY]; };
+
+function draw(now) {
+  if (running) {
+    gl.uniform2f(rLoc, canvas.width, canvas.height);
+    gl.uniform1f(tLoc, now * 0.001);
+    gl.uniform2f(mLoc, mouse[0], mouse[1]);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
